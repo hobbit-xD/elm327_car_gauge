@@ -5,6 +5,16 @@
 // all the images are created in Photopea, exported using image2cpp website and stored in separate header files
 #include "ford_boost.h"
 
+#define DEBUG 0
+
+#if DEGUG
+#define prt(x) Serial.print(x);
+#define prtn(x) Serial.println(x);
+#else
+#define prt(x)
+#define prtn(x)
+#endif
+
 #define DEFAULT_PRESSURE 101  // Default atmospheric pressure is 101kPa
 
 // The remote service we wish to connect to.
@@ -24,23 +34,27 @@ static BLERemoteCharacteristic* pRemoteCharacteristic;
 static BLERemoteCharacteristic* pReadCharacteristic;
 static BLEAdvertisedDevice* myDevice;
 
-String imapRequestCommand = "010B\r";  //Intake manifold absolute pressure pid command return value in kPa
-String bpRequestCommand = "0133\r";    //Absolute Barometric Pressure return value in kPa
+String imapRequestCommand = "010B\r";     //Intake manifold absolute pressure pid command return value in kPa
+String bpRequestCommand = "0133\r";       //Absolute Barometric Pressure return value in kPa
+String oilTempRequestCommand = "015C\r";  //Engine oil temperature
 
-unsigned int coolantTemperature;
+unsigned int oilTemperature;
 unsigned int barometricPressure = DEFAULT_PRESSURE;
 unsigned int bp = 0;
 unsigned int imap = DEFAULT_PRESSURE;
 
+
 int intervalloScansione_pressione = 2700000;
 unsigned long tempo_trascorso_pressione;
+int intervalloScansione_temperatura = 60000;
+unsigned long tempo_trascorso_temperatura;
 
 int menu = 0;
 
 float psi_older[20];  // store a few older readings for smoother readout
 
 unsigned int hexToDec(String hexString) {
-  Serial.println("hexToDec function");
+  prtn("hexToDec function");
   int ArrayLength = hexString.length() + 1;  //The +1 is for the 0x00h Terminator
   char CharArray[ArrayLength];
   hexString.toCharArray(CharArray, ArrayLength);
@@ -60,10 +74,10 @@ static void notifyCallback(
     for (size_t i = 0; i < length; i++) {
       response += (char)pData[i];
     }
-    Serial.println("Received response: " + response);
-    if (response.substring(2, 4) == "05") {
-      //Calculating coolant Temperature
-      coolantTemperature = hexToDec(response.substring(4)) - 40;
+    prtn("Received response: " + response);
+    if (response.substring(2, 4) == "5C") {
+      //Calculating oil Temperature
+      oilTemperature = hexToDec(response.substring(4)) - 40;
 
     } else if (response.substring(2, 4) == "0B") {
       //Calculating Imap
@@ -76,99 +90,98 @@ static void notifyCallback(
   }
 }
 
-
 class MyClientCallback : public BLEClientCallbacks {
   void onConnect(BLEClient* pclient) {
   }
 
   void onDisconnect(BLEClient* pclient) {
     connected = false;
-    Serial.println("onDisconnect");
+    prtn("onDisconnect");
   }
 };
 
 bool connectToServer() {
-  Serial.print("Forming a connection to ");
-  Serial.println(myDevice->getAddress().toString().c_str());
+  prt("Forming a connection to ");
+  prtn(myDevice->getAddress().toString().c_str());
 
   BLEClient* pClient = BLEDevice::createClient();
-  Serial.println(" - Created client");
+  prtn(" - Created client");
 
   pClient->setClientCallbacks(new MyClientCallback());
 
   // Connect to the remote BLE Server.
   pClient->connect(myDevice);  // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
-  Serial.println(" - Connected to server");
+  prtn(" - Connected to server");
   pClient->setMTU(517);  // set client to request maximum MTU from server (default is 23 otherwise)
 
   // Obtain a reference to the service we are after in the remote BLE server.
   BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
   if (pRemoteService == nullptr) {
-    Serial.print("Failed to find our service UUID: ");
-    Serial.println(serviceUUID.toString().c_str());
+    prt("Failed to find our service UUID: ");
+    prtn(serviceUUID.toString().c_str());
     pClient->disconnect();
     return false;
   }
-  Serial.println(" - Found our service");
+  prtn(" - Found our service");
 
   // Obtain a reference to the characteristic in the service of the remote BLE server.
   pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
   if (pRemoteCharacteristic == nullptr) {
-    Serial.print("Failed to find our characteristic UUID: ");
-    Serial.println(charUUID.toString().c_str());
+    prt("Failed to find our characteristic UUID: ");
+    prtn(charUUID.toString().c_str());
     pClient->disconnect();
     return false;
   }
-  Serial.println(" - Found our write characteristic");
+  prtn(" - Found our write characteristic");
 
 
   // Obtain a reference to the characteristic in the service of the remote BLE server.
   pReadCharacteristic = pRemoteService->getCharacteristic(txUUID);
   if (pReadCharacteristic == nullptr) {
-    Serial.print("Failed to find our characteristic UUID: ");
-    Serial.println(txUUID.toString().c_str());
+    prt("Failed to find our characteristic UUID: ");
+    prtn(txUUID.toString().c_str());
     pClient->disconnect();
     return false;
   }
-  Serial.println(" - Found our read/notify characteristic");
+  prtn(" - Found our read/notify characteristic");
 
 
   // Read the value of the characteristic.
   if (pReadCharacteristic->canRead()) {
-    Serial.println("The characteristic can read");
+    prtn("The characteristic can read");
     //String value = pReadCharacteristic->readValue();
-    //Serial.print("The characteristic value was: ");
-    //Serial.println(value.c_str());
+    //prt("The characteristic value was: ");
+    //prtn(value.c_str());
   }
 
   if (pReadCharacteristic->canNotify()) {
-    Serial.println("The characteristic can notify, registering callback: ");
+    prtn("The characteristic can notify, registering callback: ");
     pReadCharacteristic->registerForNotify(notifyCallback);
   }
 
   connected = true;
-  Serial.println("We are now connected to the BLE Server.");
-  Serial.println("ELM327 initializing..");
+  prtn("We are now connected to the BLE Server.");
+  prtn("ELM327 initializing..");
 
   // Initialize ELM327 after successful connection
   if (!initializeELM327()) {
-    Serial.println("Failed to initialize ELM327");
+    prtn("Failed to initialize ELM327");
     connected = false;
     return false;
   }
 
-  Serial.println("ELM327 initialized successfully");
+  prtn("ELM327 initialized successfully");
   return true;
 }
 
 class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
   void onResult(BLEAdvertisedDevice advertisedDevice) {
-    Serial.print("BLE Advertised Device found: ");
-    Serial.println(advertisedDevice.toString().c_str());
+    prt("BLE Advertised Device found: ");
+    prtn(advertisedDevice.toString().c_str());
 
     // We have found a device, let us now see if it contains the service we are looking for.
     if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceUUID)) {
-      Serial.println("Device found");
+      prtn("Device found");
       BLEDevice::getScan()->stop();
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
       doConnect = true;
@@ -191,8 +204,8 @@ bool initializeELM327() {
   };
 
   for (const char* cmd : initCommands) {
-    Serial.print("Sending command: ");
-    Serial.println(cmd);
+    prt("Sending command: ");
+    prtn(cmd);
     pRemoteCharacteristic->writeValue(cmd, strlen(cmd));
     delay(1000);  // Wait for response
                   // Might want to read the response here and check for success
@@ -204,7 +217,7 @@ bool initializeELM327() {
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Starting Arduino BLE Client application...");
+  prtn("Starting Arduino BLE Client application...");
   touch.begin();
   tft.init();                    // initialize the display
   tft.setRotation(4);            // set the display rotation, in this rotation, the USB port is on the bottom
@@ -227,9 +240,9 @@ void setup() {
 void loop() {
   if (doConnect == true) {
     if (connectToServer()) {
-      Serial.println("We are now connected to the BLE Server and ELM327 is initialized.");
+      prtn("We are now connected to the BLE Server and ELM327 is initialized.");
     } else {
-      Serial.println("We have failed to connect to the server or initialize ELM327; there is nothing more we will do.");
+      prtn("We have failed to connect to the server or initialize ELM327; there is nothing more we will do.");
     }
     doConnect = false;
     delay(500);
@@ -250,12 +263,12 @@ void loop() {
       case 0:
         {
           // Sending the command to request intake manifold pressure
-          Serial.println("Sending Imap request command: " + imapRequestCommand);
+          prtn("Sending Imap request command: " + imapRequestCommand);
           pRemoteCharacteristic->writeValue(imapRequestCommand.c_str(), imapRequestCommand.length());
 
           // Sending the command to request barometric pressure
           if (millis() - tempo_trascorso_pressione >= intervalloScansione_pressione) {
-            Serial.println("Sending Bp request command: " + bpRequestCommand);
+            prtn("Sending Bp request command: " + bpRequestCommand);
             pRemoteCharacteristic->writeValue(bpRequestCommand.c_str(), bpRequestCommand.length());
             tempo_trascorso_pressione = millis();
           }
@@ -267,7 +280,6 @@ void loop() {
           int boost_Kpa = imap - barometricPressure;
           //float boost_bar = boost_Kpa / 100.0;
           float boost_psi = boost_Kpa / 6.895;  //boost_bar * 14.504;
-
 
           // store a few older measurements
           for (int i = 0; i < 9; i++) {
@@ -290,15 +302,25 @@ void loop() {
 
       case 1:
         {
+          if (millis() - tempo_trascorso_temperatura >= intervalloScansione_temperatura) {
+            prtn("Sending Oil temperature request command: " + oilTempRequestCommand);
+            pRemoteCharacteristic->writeValue(oilTempRequestCommand.c_str(), oilTempRequestCommand.length());
+            tempo_trascorso_temperatura = millis();
+          }
+
           // Now wait for the notification to come in the callback function
           tft.fillScreen(TFT_BLACK);
-          tft.setCursor(120, 120, 2);
+          tft.setCursor(80, 60, 2);
           // Set the font colour to be white with a black background, set text size multiplier to 1
           tft.setTextColor(TFT_WHITE);
           tft.setTextSize(1);
           // We can now plot text on screen using the "print" class
           tft.print("Bp value: ");
           tft.println(bp);
+
+          tft.setCursor(80, 80, 2);
+          tft.print("Oil value: ");
+          tft.println(oilTemperature);
         }
         break;
     }

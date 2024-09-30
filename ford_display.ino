@@ -235,6 +235,7 @@ void setup() {
   pBLEScan->start(5, false);
 
   tempo_trascorso_pressione = millis();
+  tempo_trascorso_temperatura = millis();
 }
 
 void loop() {
@@ -267,10 +268,12 @@ void loop() {
           pRemoteCharacteristic->writeValue(imapRequestCommand.c_str(), imapRequestCommand.length());
 
           // Sending the command to request barometric pressure
-          if (millis() - tempo_trascorso_pressione >= intervalloScansione_pressione) {
+          if ((millis() - tempo_trascorso_pressione >= intervalloScansione_pressione) || bp == 0) {
+
             prtn("Sending Bp request command: " + bpRequestCommand);
             pRemoteCharacteristic->writeValue(bpRequestCommand.c_str(), bpRequestCommand.length());
             tempo_trascorso_pressione = millis();
+            delay(150);
           }
 
           if (bp != 0) {
@@ -302,7 +305,7 @@ void loop() {
 
       case 1:
         {
-          if (millis() - tempo_trascorso_temperatura >= intervalloScansione_temperatura) {
+          if ((millis() - tempo_trascorso_temperatura >= intervalloScansione_temperatura) || oilTemperature == 0) {
             prtn("Sending Oil temperature request command: " + oilTempRequestCommand);
             pRemoteCharacteristic->writeValue(oilTempRequestCommand.c_str(), oilTempRequestCommand.length());
             tempo_trascorso_temperatura = millis();

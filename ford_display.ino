@@ -46,12 +46,17 @@ unsigned int imap = DEFAULT_PRESSURE;
 
 int intervalloScansione_pressione = 2700000;
 unsigned long tempo_trascorso_pressione;
+
 int intervalloScansione_temperatura = 60000;
 unsigned long tempo_trascorso_temperatura;
 
+int intervalloScansione = 50;
+unsigned long tempo_trascorso_imap;
+
+
 int menu = 0;
 
-float psi_older[20];  // store a few older readings for smoother readout
+float psi_older[5];  // store a few older readings for smoother readout
 
 unsigned int hexToDec(String hexString) {
   prtn("hexToDec function");
@@ -219,6 +224,7 @@ void setup() {
   Serial.begin(115200);
   prtn("Starting Arduino BLE Client application...");
   touch.begin();
+  touch.enable_double_click();   // Enable double-click detection
   tft.init();                    // initialize the display
   tft.setRotation(4);            // set the display rotation, in this rotation, the USB port is on the bottom
   tft.fillScreen(TFT_DARKGREY);  // fill the display with a dark grey color
@@ -236,6 +242,7 @@ void setup() {
 
   tempo_trascorso_pressione = millis();
   tempo_trascorso_temperatura = millis();
+  tempo_trascorso_imap = millis();
 }
 
 void loop() {
@@ -253,7 +260,9 @@ void loop() {
 
     //choose display page
     if (touch.available()) {
-      menu++;
+      if (touch.gesture() == "DOUBLE CLICK") {
+        menu++;
+      }
 
       if (menu > 1) {
         menu = 0;
@@ -264,16 +273,17 @@ void loop() {
       case 0:
         {
           // Sending the command to request intake manifold pressure
-          prtn("Sending Imap request command: " + imapRequestCommand);
-          pRemoteCharacteristic->writeValue(imapRequestCommand.c_str(), imapRequestCommand.length());
-
+          if (millis() - tempo_trascorso_imap >= intervalloScansione) {
+            prtn("Sending Imap request command: " + imapRequestCommand);
+            pRemoteCharacteristic->writeValue(imapRequestCommand.c_str(), imapRequestCommand.length());
+            tempo_trascorso_imap = millis();
+          }
           // Sending the command to request barometric pressure
           if ((millis() - tempo_trascorso_pressione >= intervalloScansione_pressione) || bp == 0) {
 
             prtn("Sending Bp request command: " + bpRequestCommand);
             pRemoteCharacteristic->writeValue(bpRequestCommand.c_str(), bpRequestCommand.length());
             tempo_trascorso_pressione = millis();
-            delay(150);
           }
 
           if (bp != 0) {
@@ -285,16 +295,16 @@ void loop() {
           float boost_psi = boost_Kpa / 6.895;  //boost_bar * 14.504;
 
           // store a few older measurements
-          for (int i = 0; i < 9; i++) {
+          for (int i = 0; i < 4; i++) {
             psi_older[i] = psi_older[i + 1];
           }
-          psi_older[9] = boost_psi;
+          psi_older[4] = boost_psi;
 
           float psi_combined = 0;
-          for (int i = 0; i < 10; i++) {
+          for (int i = 0; i < 5; i++) {
             psi_combined = psi_combined + psi_older[i];
           }
-          psi_combined = psi_combined / 10;  // final pressure value is the average of last 10 readings
+          psi_combined = psi_combined / 5;  // final pressure value is the average of last 5 readings
 
           int image_pressure = map(round(psi_combined), -15, 45, 0, 60);
           image_pressure = constrain(image_pressure, 0, 60);  // restrict the images to 0-60 in case the PSI pressure is outside the range of -15..45
@@ -331,6 +341,4 @@ void loop() {
   } else if (doScan) {
     BLEDevice::getScan()->start(0);
   }
-
-  delay(50);  // Delay for a second before the next loop
 }

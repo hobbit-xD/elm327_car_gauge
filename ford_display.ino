@@ -319,21 +319,21 @@ void loop() {
             prtn("Sending Oil temperature request command: " + oilTempRequestCommand);
             pRemoteCharacteristic->writeValue(oilTempRequestCommand.c_str(), oilTempRequestCommand.length());
             tempo_trascorso_temperatura = millis();
+
+            // Now wait for the notification to come in the callback function
+            tft.fillScreen(TFT_BLACK);
+            tft.setCursor(80, 60, 2);
+            // Set the font colour to be white with a black background, set text size multiplier to 1
+            tft.setTextColor(TFT_WHITE);
+            tft.setTextSize(1);
+            // We can now plot text on screen using the "print" class
+            tft.print("Bp value: ");
+            tft.println(bp);
+
+            tft.setCursor(80, 80, 2);
+            tft.print("Oil value: ");
+            tft.println(oilTemperature);
           }
-
-          // Now wait for the notification to come in the callback function
-          tft.fillScreen(TFT_BLACK);
-          tft.setCursor(80, 60, 2);
-          // Set the font colour to be white with a black background, set text size multiplier to 1
-          tft.setTextColor(TFT_WHITE);
-          tft.setTextSize(1);
-          // We can now plot text on screen using the "print" class
-          tft.print("Bp value: ");
-          tft.println(bp);
-
-          tft.setCursor(80, 80, 2);
-          tft.print("Oil value: ");
-          tft.println(oilTemperature);
         }
         break;
     }

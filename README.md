@@ -11,7 +11,7 @@ We are using Ble for connecting to the OBD2 (Server) and the esp32 act as client
 
 ## Arduino settings
 
-![Arduino Settings](arduino_settinga.png)
+![Arduino Settings](arduino_settings.png)
 
 ## Links
 
